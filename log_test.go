@@ -2,6 +2,7 @@ package log_test
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"strings"
 	"testing"
@@ -84,14 +85,33 @@ func BenchmarkLog_formatting(b *testing.B) {
 	}
 }
 
+// Example of using the global log.
 func Example() {
 	log.SetOutput(os.Stdout)
 	log.SetLogLevel(log.LevelAll ^ log.LevelDebug)
+	// we call SetTimestamp so that the timestamp will be deterministic
 	log.SetTimestamp(func() string { return "2006-01-02T15:04:05.999999999Z" })
 	err := log.Debug("This will not be written")
 	if err != nil {
 		log.Error("Could not write DEBUG entry: %s", err)
 	}
 	log.Info("Hello %s", "world")
+	// Output: 2006-01-02T15:04:05.999999999Z	INFO	Hello world
+}
+
+// Example of using a private log.
+func ExampleLog() {
+	l := log.NewLog()
+	var buf bytes.Buffer
+	l.SetOutput(&buf)
+	l.SetLogLevel(log.LevelAll ^ log.LevelDebug)
+	// we call SetTimestamp so that the timestamp will be deterministic
+	l.SetTimestamp(func() string { return "2006-01-02T15:04:05.999999999Z" })
+	err := l.Debug("This will not be written")
+	if err != nil {
+		log.Error("Could not write DEBUG entry: %s", err)
+	}
+	l.Info("Hello %s", "world")
+	fmt.Print(buf.String())
 	// Output: 2006-01-02T15:04:05.999999999Z	INFO	Hello world
 }

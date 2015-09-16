@@ -12,15 +12,23 @@ import (
 	"time"
 )
 
-var output io.Writer = os.Stderr
-var logLevel Level = LevelAll
-var timestamp func() string = func() string {
-	return time.Now().UTC().Format(time.RFC3339Nano)
+// Log is used for private logs. Do not create directly, use NewLog().
+type Log struct {
+	output    io.Writer
+	logLevel  Level
+	timestamp func() string
+}
+
+var std *Log
+
+func init() {
+	std = NewLog()
 }
 
 // Level is a logging level.
 type Level uint64
 
+// Defined log levels. See SetLogLevel for usage.
 const (
 	LevelDebug Level = 1 << iota
 	LevelInfo
@@ -33,100 +41,155 @@ const (
 	LevelNone = 0
 )
 
-// SetLogLevel controls which log entries are actually written.
+// SetLogLevel controls which log entries are actually written to the global log.
 // Multiple logging levels can be combined by ORing individual
 // Level values, eg. LevelDebug|LevelError will log both DEBUG and ERROR entries. Alternatively,
 // specific log levels can be suppresed via XORing with LevelAll, eg. LevelAll ^ LevelDebug
 // will log everything except DEBUG entries.
 // The default log level is LevelAll.
 func SetLogLevel(l Level) {
-	logLevel = l
+	std.SetLogLevel(l)
 }
 
-// SetOutput directs log output to w. The default output is written to os.Stderr.
+// SetOutput directs global log output to w. The default output is written to os.Stderr.
 func SetOutput(w io.Writer) {
-	output = w
+	std.SetOutput(w)
 }
 
-// SetOuputFile is a convenience function to wrap SetOutput() for writing to a file.
+// SetOuputFile is a convenience function to wrap SetOutput() for writing global log entries to a file.
 func SetOutputFile(f string) error {
+	return std.SetOutputFile(f)
+}
+
+// SetTimestamp allows the user to replace the default RFC3339Nano timestamp string used by the global log. It
+// is intended for creating deterministic test cases, but may be generally useful.
+func SetTimestamp(f func() string) {
+	std.SetTimestamp(f)
+}
+
+// Debug writes a DEBUG entry to the global log file.
+func Debug(format string, args ...interface{}) error {
+	return std.Debug(format, args...)
+}
+
+// Info writes a INFO entry to the global log file.
+func Info(format string, args ...interface{}) error {
+	return std.Info(format, args...)
+}
+
+// Warning writes a WARNING entry to the global log file.
+func Warning(format string, args ...interface{}) error {
+	return std.Warning(format, args...)
+}
+
+// Error writes an ERROR entry to the global log file.
+func Error(format string, args ...interface{}) error {
+	return std.Error(format, args...)
+}
+
+// Fatal writes a FATAL entry to the global log file and then exits
+// via os.Exit(1).
+func Fatal(format string, args ...interface{}) error {
+	return std.Fatal(format, args...)
+}
+
+// Panic writes a PANIC entry to the global log file and then
+// calls panic() with the log entry.
+func Panic(format string, args ...interface{}) error {
+	return std.Panic(format, args...)
+}
+
+// Custom writes a global log entry with a caller-supplied log level string.
+func Custom(level string, format string, args ...interface{}) error {
+	return std.Custom(level, format, args...)
+}
+
+// NewLog creates a private log with all log levels enabled and output to os.Stderr.
+func NewLog() *Log {
+	return &Log{
+		output:   os.Stderr,
+		logLevel: LevelAll,
+		timestamp: func() string {
+			return time.Now().UTC().Format(time.RFC3339Nano)
+		},
+	}
+}
+
+func (l *Log) SetLogLevel(ll Level) {
+	l.logLevel = ll
+}
+
+func (l *Log) SetOutput(w io.Writer) {
+	l.output = w
+}
+
+func (l *Log) SetOutputFile(f string) error {
 	w, err := os.OpenFile(f, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
 	if err != nil {
 		return err
 	}
-	SetOutput(w)
+	l.SetOutput(w)
 	return nil
 }
 
-// SetTimestamp allows the user to replace the default RFC3339Nano timestamp string. It
-// is intended for creating deterministic test cases, but may be generally useful.
-func SetTimestamp(f func() string) {
-	timestamp = f
+func (l *Log) SetTimestamp(f func() string) {
+	l.timestamp = f
 }
 
-// Debug writes a DEBUG entry to the log file.
-func Debug(format string, args ...interface{}) error {
-	if logLevel&LevelDebug == 0 {
+func (l *Log) Debug(format string, args ...interface{}) error {
+	if l.logLevel&LevelDebug == 0 {
 		return nil
 	}
-	return writeEntry("DEBUG", format, args...)
+	return l.writeEntry("DEBUG", format, args...)
 }
 
-// Info writes a INFO entry to the log file.
-func Info(format string, args ...interface{}) error {
-	if logLevel&LevelInfo == 0 {
+func (l *Log) Info(format string, args ...interface{}) error {
+	if l.logLevel&LevelInfo == 0 {
 		return nil
 	}
-	return writeEntry("INFO", format, args...)
+	return l.writeEntry("INFO", format, args...)
 }
 
-// Warning writes a WARNING entry to the log file.
-func Warning(format string, args ...interface{}) error {
-	if logLevel&LevelWarning == 0 {
+func (l *Log) Warning(format string, args ...interface{}) error {
+	if l.logLevel&LevelWarning == 0 {
 		return nil
 	}
-	return writeEntry("WARNING", format, args...)
+	return l.writeEntry("WARNING", format, args...)
 }
 
-// Error writes an ERROR entry to the log file.
-func Error(format string, args ...interface{}) error {
-	if logLevel&LevelError == 0 {
+func (l *Log) Error(format string, args ...interface{}) error {
+	if l.logLevel&LevelError == 0 {
 		return nil
 	}
-	return writeEntry("ERROR", format, args...)
+	return l.writeEntry("ERROR", format, args...)
 }
 
-// Fatal writes a FATAL entry to the log file and then exits
-// via os.Exit(1).
-func Fatal(format string, args ...interface{}) error {
-	if logLevel&LevelFatal == 0 {
+func (l *Log) Fatal(format string, args ...interface{}) error {
+	if l.logLevel&LevelFatal == 0 {
 		return nil
 	}
-	err := writeEntry("FATAL", format, args...)
+	err := l.writeEntry("FATAL", format, args...)
 	os.Exit(1)
 	return err // won't actually execute
 }
 
-// Panic writes a PANIC entry to the log file and then
-// calls panic() with the log entry.
-func Panic(format string, args ...interface{}) error {
-	if logLevel&LevelPanic == 0 {
+func (l *Log) Panic(format string, args ...interface{}) error {
+	if l.logLevel&LevelPanic == 0 {
 		return nil
 	}
-	err := writeEntry("PANIC", format, args...)
+	err := l.writeEntry("PANIC", format, args...)
 	panic(fmt.Sprintf(format, args...))
 	return err // won't actually execute
 }
 
-// Custom writes an entry with a caller-supplied log level string.
-func Custom(level string, format string, args ...interface{}) error {
-	if logLevel&LevelCustom == 0 {
+func (l *Log) Custom(level string, format string, args ...interface{}) error {
+	if l.logLevel&LevelCustom == 0 {
 		return nil
 	}
-	return writeEntry(level, format, args...)
+	return l.writeEntry(level, format, args...)
 }
 
-func writeEntry(level string, format string, args ...interface{}) error {
-	_, err := fmt.Fprintf(output, "%s\t%s\t%s\n", timestamp(), level, fmt.Sprintf(format, args...))
+func (l *Log) writeEntry(level string, format string, args ...interface{}) error {
+	_, err := fmt.Fprintf(l.output, "%s\t%s\t%s\n", l.timestamp(), level, fmt.Sprintf(format, args...))
 	return err
 }
