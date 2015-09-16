@@ -56,6 +56,11 @@ func SetOutput(w io.Writer) {
 	std.SetOutput(w)
 }
 
+// Close calls Close on the output Writer, if it is a WriteCloser, otherwise Close is a no-op.
+func Close() error {
+	return std.Close()
+}
+
 // SetOuputFile is a convenience function to wrap SetOutput() for writing global log entries to a file.
 func SetOutputFile(f string) error {
 	return std.SetOutputFile(f)
@@ -121,6 +126,13 @@ func (l *Log) SetLogLevel(ll Level) {
 
 func (l *Log) SetOutput(w io.Writer) {
 	l.output = w
+}
+
+func (l *Log) Close() error {
+	if o, ok := l.output.(io.WriteCloser); ok {
+		return o.Close()
+	}
+	return nil
 }
 
 func (l *Log) SetOutputFile(f string) error {

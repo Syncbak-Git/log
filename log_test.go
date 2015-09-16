@@ -3,6 +3,7 @@ package log_test
 import (
 	"bytes"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 	"testing"
@@ -16,6 +17,7 @@ func TestLog(t *testing.T) {
 	log.SetLogLevel(log.LevelAll ^ log.LevelDebug ^ log.LevelFatal)
 	log.Debug("Hello %s", "world") // this won't get written
 	log.Info("%s %d", "Hello world", 1234)
+	log.Close() // should have no effect, because Buffer is not a WriteCloser
 	log.Error("%v", struct{ s string }{"Hello world"})
 	log.Fatal("%v", struct{ s string }{"Hello world"}) // won't trigger or write
 	log.Custom("TEST", "Hello world", "extra arg")
@@ -50,6 +52,39 @@ func TestLog(t *testing.T) {
 	}()
 	log.Panic("%s %d", "Hello world", 1234)
 	t.Error("Panic didn't panic")
+}
+
+func TestClose(t *testing.T) {
+	var buff bytes.Buffer
+	log.SetOutput(&buff)
+	log.SetLogLevel(log.LevelAll)
+	err := log.Close() // should have no effect, because Buffer is not a WriteCloser
+	if err != nil {
+		t.Errorf("Close shouldn't have returned error: %s", err)
+	}
+	log.Info("Hello")
+	if !strings.Contains(buff.String(), "Hello") {
+		t.Errorf("Close killed output of Buffer: %s", buff.String())
+	}
+	read, write := io.Pipe()
+	log.SetOutput(write)
+	go func() { // we need to read before writing to the pipe
+		b := make([]byte, 100)
+		n, err := read.Read(b)
+		if !strings.Contains(string(b), "Hello") {
+			t.Errorf("Pipe read failed: %d, %s, %v", n, string(b), err)
+		}
+		n, err = read.Read(b)
+		if n != 0 || err != io.EOF {
+			t.Errorf("Close didn't work: %d bytes read, %s (%v)", n, string(b), err)
+		}
+	}()
+	log.Info("Hello")
+	err = log.Close()
+	if err != nil {
+		t.Errorf("Close shouldn't have returned error on pipe: %s", err)
+	}
+	log.Info("Hello")
 }
 
 func BenchmarkLog_basic(b *testing.B) {
@@ -113,5 +148,6 @@ func ExampleLog() {
 	}
 	l.Info("Hello %s", "world")
 	fmt.Print(buf.String())
+	l.Close()
 	// Output: 2006-01-02T15:04:05.999999999Z	INFO	Hello world
 }
