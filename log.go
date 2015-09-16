@@ -2,6 +2,7 @@
 // but it introduces log levels to control which log entries are actually written.
 // Note that the various SetXXX() functions are not thread-safe and should be called before
 // writing log entries (or at least while there are no parallel routines writing log entries).
+// Package log is the successor to github.com/Syncbak-Git/logging.
 package log
 
 import (
